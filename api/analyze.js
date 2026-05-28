@@ -1,7 +1,14 @@
 export default async function handler(req, res) {
-  // Only allow POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Password check
+  const submittedPassword = req.headers['x-crosscut-password'];
+  const correctPassword = process.env.CROSSCUT_PASSWORD;
+
+  if (!correctPassword || submittedPassword !== correctPassword) {
+    return res.status(401).json({ error: 'Incorrect password' });
   }
 
   const { text } = req.body;
