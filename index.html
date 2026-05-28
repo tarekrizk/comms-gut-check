@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Comms Gut Check</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 680px;
+      margin: 60px auto;
+      padding: 0 20px;
+    }
+
+    h1 {
+      margin-bottom: 8px;
+    }
+
+    p.subtitle {
+      margin-top: 0;
+      margin-bottom: 28px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: bold;
+    }
+
+    textarea {
+      width: 100%;
+      box-sizing: border-box;
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 10px;
+      resize: vertical;
+    }
+
+    button {
+      display: block;
+      margin-top: 12px;
+      padding: 10px 24px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+
+    #copy-btn {
+      display: none;
+      margin-top: 8px;
+      background: none;
+      border: 1px solid #666;
+      color: #333;
+    }
+
+    #copy-btn:hover {
+      background: #f5f5f5;
+    }
+
+    #results {
+      margin-top: 40px;
+    }
+
+    #status {
+      margin-bottom: 16px;
+    }
+
+    #sections {
+      display: none;
+    }
+
+    .section-box {
+      border: 1px solid #ccc;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+    }
+
+    .section-label {
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+
+    .section-body {
+      margin: 0;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <h1>The Comms Gut Check</h1>
+  <p class="subtitle">Paste any communication below and get a structured critique.</p>
+
+  <form>
+    <label for="communication">Your communication</label>
+    <textarea id="communication" name="communication" rows="10"></textarea>
+    <button type="submit">Submit</button>
+  </form>
+
+  <div id="results">
+    <div id="status"></div>
+    <div id="sections">
+      <div class="section-box">
+        <div class="section-label">CLARITY</div>
+        <p class="section-body" id="section-clarity"></p>
+      </div>
+      <div class="section-box">
+        <div class="section-label">JARGON</div>
+        <p class="section-body" id="section-jargon"></p>
+      </div>
+      <div class="section-box">
+        <div class="section-label">AUDIENCE PUSHBACK</div>
+        <p class="section-body" id="section-pushback"></p>
+      </div>
+      <div class="section-box">
+        <div class="section-label">TONE</div>
+        <p class="section-body" id="section-tone"></p>
+      </div>
+      <div class="section-box">
+        <div class="section-label">SUGGESTED REVISION</div>
+        <p class="section-body" id="section-revision"></p>
+      </div>
+    </div>
+    <button id="copy-btn" type="button">Copy results</button>
+  </div>
+
+  <script>
+    const SECTIONS = [
+      { key: 'clarity',  header: '**CLARITY**',           id: 'section-clarity'  },
+      { key: 'jargon',   header: '**JARGON**',            id: 'section-jargon'   },
+      { key: 'pushback', header: '**AUDIENCE PUSHBACK**', id: 'section-pushback' },
+      { key: 'tone',     header: '**TONE**',              id: 'section-tone'     },
+      { key: 'revision', header: '**SUGGESTED REVISION**',id: 'section-revision' },
+    ];
+
+    function parseResponse(text) {
+      const result = {};
+      for (let i = 0; i < SECTIONS.length; i++) {
+        const start = text.indexOf(SECTIONS[i].header);
+        if (start === -1) { result[SECTIONS[i].key] = ''; continue; }
+        const contentStart = start + SECTIONS[i].header.length;
+        const end = i + 1 < SECTIONS.length ? text.indexOf(SECTIONS[i + 1].header) : text.length;
+        result[SECTIONS[i].key] = text.slice(contentStart, end === -1 ? text.length : end).trim();
+      }
+      return result;
+    }
+
+    document.getElementById('copy-btn').addEventListener('click', function () {
+      const lines = SECTIONS.map(s => {
+        const label = s.header.replace(/\*\*/g, '');
+        const body = document.getElementById(s.id).textContent;
+        return label + '\n' + body;
+      });
+      navigator.clipboard.writeText(lines.join('\n\n')).then(() => {
+        this.textContent = 'Copied!';
+        setTimeout(() => { this.textContent = 'Copy results'; }, 2000);
+      });
+    });
+
+    document.querySelector('form').addEventListener('submit', async function (e) {
+      e.preventDefault();
+
+      const text = document.getElementById('communication').value.trim();
+      const status = document.getElementById('status');
+      const sections = document.getElementById('sections');
+
+      if (!text) {
+        status.textContent = 'Please paste something before submitting.';
+        sections.style.display = 'none';
+        return;
+      }
+
+      sections.style.display = 'none';
+      document.getElementById('copy-btn').style.display = 'none';
+      status.textContent = 'Analyzing your communication…';
+
+      try {
+        // Calls our own proxy endpoint — API key never touches the browser
+        const response = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error || `Request failed (${response.status})`);
+        }
+
+        const data = await response.json();
+        const parsed = parseResponse(data.content[0].text);
+
+        SECTIONS.forEach(s => {
+          document.getElementById(s.id).textContent = parsed[s.key];
+        });
+
+        status.textContent = '';
+        sections.style.display = 'block';
+        document.getElementById('copy-btn').style.display = 'block';
+
+      } catch (err) {
+        status.textContent = 'Something went wrong — please try again. (' + err.message + ')';
+        sections.style.display = 'none';
+      }
+    });
+  </script>
+</body>
+</html>
